@@ -15,7 +15,7 @@ sudo systemctl status k3s
 Cài đặt Helm (Package Manager)
 
 ```bash
-curl -sSL https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz | tar xz
+curl -sSL https://get.helm.sh/helm-v4.1.1-linux-amd64.tar.gz | tar xz
 sudo mv linux-amd64/helm /usr/local/bin/helm
 # Kiểm tra phiên bản
 helm version
@@ -33,37 +33,108 @@ kubectl create namespace monitoring
 kubectl create namespace tailscale
 ```
 
-### 3. Thêm Helm Repositories
+### 3. Cấu hình Storage Class (Tùy chọn cho K3s)
 
-Đăng ký các nguồn chứa Charts cho các dịch vụ
+Nếu dùng K3s, local-path storage class thường có sẵn. Kiểm tra:
 
 ```bash
-helm repo add openfaas https://openfaas.github.io/faas-netes/
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add tailscale https://pkgs.tailscale.com/helmcharts
+kubectl get storageclass
+```
 
+Nếu không có, K3s sẽ dùng local-path mặc định. Đảm bảo mỗi node có đủ dung lượng cho Prometheus và Grafana persistence.
+
+### 4. Chuẩn bị các file cấu hình
+
+Tạo thư mục `cluster-setup/` chứa các file cấu hình và script:
+
+```bash
+mkdir -p ~/cluster-setup
+cd ~/cluster-setup
+```
+
+**Ch fix quyền kubeconfig** (nếu cảnh báo file readable):
+
+```bash
+sudo chmod 600 /etc/rancher/k3s/k3s.yaml
+```
+
+### 5. Tạo file cấu hình Helm Values
+
+**File: grafana-values.yaml** - Bật persistence và cấu hình admin cho Grafana
+
+```yaml
+persistence:
+  enabled: true
+  type: pvc
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+adminUser: admin
+```
+
+**File: prometheus-values.yaml** - Bật persistence cho Prometheus server
+
+```yaml
+server:
+  persistentVolume:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+
+  retention: 15d
+```
+
+### 6. Tạo script tự động hóa nâng cấp
+
+**File: update-cluster.sh** - Script triển khai/nâng cấp tất cả thành phần
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Bắt đầu quá trình nâng cấp cho Cluster..."
+
+echo "--- Đang đồng bộ Helm repositories ---"
+helm repo add openfaas https://openfaas.github.io/faas-netes/ --force-update
+helm repo add grafana https://grafana.github.io/helm-charts --force-update
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 helm repo update
+
+# Nâng cấp/cài đặt OpenFaaS
+echo "--- Đang nâng cấp OpenFaaS ---"
+helm upgrade --install openfaas openfaas/openfaas --namespace openfaas --reuse-values
+
+# Nâng cấp/cài đặt Grafana với persistence
+echo "--- Đang nâng cấp Grafana ---"
+helm upgrade --install grafana grafana/grafana --namespace monitoring --reuse-values -f "$SCRIPT_DIR/grafana-values.yaml"
+
+# Nâng cấp/cài đặt Prometheus với persistence
+echo "--- Đang nâng cấp Prometheus ---"
+helm upgrade --install prometheus prometheus-community/prometheus --namespace monitoring --reuse-values -f "$SCRIPT_DIR/prometheus-values.yaml"
+
+# Triển khai Ingress
+echo "--- Đang cấu hình HTTPS qua Tailscale Ingress ---"
+kubectl apply -f "$SCRIPT_DIR/tailscale-ingress.yaml"
+
+echo "Hoàn tất! Cluster đã sẵn sàng."
 ```
 
-### 4. Triển khai các thành phần chính
+Cấp quyền thực thi:
 
 ```bash
-# Triển khai OpenFaaS (Serverless)
-helm install openfaas openfaas/openfaas \
-  --namespace openfaas \
-  --set gateway.replicas=1 \
-  --set faasnetes.imagePullPolicy=IfNotPresent
-
-# Cài đặt Grafana với mật khẩu admin mặc định
-helm install grafana grafana/grafana \
- --namespace monitoring \
- --set adminPassword=admin
-
-# Cài đặt Prometheus
-helm install prometheus prometheus-community/prometheus \
- --namespace monitoring
+chmod +x update-cluster.sh
 ```
+
+Chạy script lần đầu:
+
+```bash
+./update-cluster.sh
+```
+
+Lần sau, chỉ cần chạy lại script khi cần cập nhật hoặc đổi cấu hình.
 
 Thêm các dòng này vào _~/.bashrc_
 
@@ -144,7 +215,7 @@ spec:
               service:
                 name: gateway
                 port:
-                  number: 9999
+                  number: 8080
   tls:
     - hosts:
         - faasportal
@@ -173,58 +244,95 @@ spec:
         - faasmetrics
 ```
 
-- Áp dụng cấu hình: Tạo 1 file update-cluster.sh
+- Áp dụng Tailscale Ingress từ script:
+
+Script update-cluster.sh sẽ tự động apply file tailscale-ingress.yaml. Sau khi Tailscale Operator khởi động, các Ingress sẽ được xử lý.
+
+**Cấu trúc thư mục hoàn chỉnh:**
+
+```
+~/cluster-setup/
+├── update-cluster.sh              # Script chính
+├── grafana-values.yaml            # Values cho Grafana với persistence
+├── prometheus-values.yaml         # Values cho Prometheus với persistence
+└── tailscale-ingress.yaml         # Cấu hình Ingress cho Tailscale
+```
+
+**Lưu ý về Persistence:**
+
+- Khi chạy lần đầu, Helm sẽ tạo PersistentVolumeClaim (PVC) cho Grafana (10Gi) và Prometheus (default, thường 8Gi).
+- Dữ liệu sẽ được lưu trữ trên node và giữ nguyên khi pod restart.
+- Nếu PVC ở trạng thái `Pending`, kiểm tra storage class và node resources:
 
 ```bash
-#!/bin/bash
-
-echo "Bắt đầu quá trình nâng cấp cho Cluster..."
-
-# Nâng cấp OpenFaaS
-echo "--- Đang nâng cấp OpenFaaS ---"
-helm upgrade openfaas openfaas/openfaas --namespace openfaas --reuse-values
-
-# Nâng cấp Grafana
-echo "--- Đang nâng cấp Grafana ---"
-helm upgrade grafana grafana/grafana --namespace monitoring --reuse-values
-
-# Nâng cấp Prometheus
-echo "--- Đang nâng cấp Prometheus ---"
-helm upgrade prometheus prometheus-community/prometheus --namespace monitoring --reuse-values
-
-# Triển khai Ingress
-echo "--- Đang cấu hình HTTPS qua Tailscale Ingress ---"
-kubectl apply -f tailscale-ingress.yaml
-
-echo "Hoàn tất! Cluster đã sẵn sàng."
+kubectl get pvc -n monitoring
+kubectl describe pvc -n monitoring
 ```
+
+### 7. Kết nối Prometheus với Grafana
+
+- Chạy script nếu chưa:
 
 ```bash
-chmod +x update-cluster.sh
+cd ~/cluster-setup
+./update-cluster.sh
 ```
 
-- Sau này, mỗi khi thay đổi gì (thêm HTTPS, đổi hostname, tăng replica), ta chỉ cần sửa file .yaml tương ứng rồi gõ ./update-cluster.sh là xong.
+- Lấy mật khẩu admin Grafana:
 
-```
-~/cluster_setup/
-├── tailscale-ingress.yaml
-└── update-cluster.sh
+```bash
+kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
 ```
 
-### 6. Kết nối Prometheus với Grafana
+- Truy cập Grafana qua Tailscale (sau khi Tailscale Operator ready):
 
-- Truy cập vào: [Grafana URL](https://faaschart.[tailnet-của-bạn].ts.net)
+Truy cập vào: `https://faaschart.[tailnet-của-bạn].ts.net`
 
-- Đăng nhập vào Grafana với account admin/admin. Đổi mật khẩu nếu Grafana yêu cầu.
+- Đăng nhập vào Grafana với username: `admin` và password từ bước trên. Bạn có thể đổi mật khẩu sau lần đăng nhập đầu tiên.
 
 - Thêm **Prometheus** làm Data Source: Connection > Add new connection > Prometheus
 
-- Trong ô **URL**, dán: http://prometheus-server.monitoring.svc.cluster.local:80.
+- Trong ô **URL**, dán: http://prometheus-server.monitoring.svc.cluster.local:80
 
 - Ấn **Test & Save**. Nếu bạn thấy một thông báo màu xanh lá cây báo hiệu "Data source is working" thì chúc mừng, Prometheus và Grafana đã thông nhau!
 
-- Ấn dấu cộng (bên phải) -> Import -> Trong ô _Import via grafana.com_, nhập số ID: 15661 (Đây là cái dashboard "K8s Cluster Summary" cực kỳ nổi tiếng) > Load
+- Ấn dấu cộng (bên phải) -> Import -> Trong ô _Import via grafana.com_, nhập số ID: 15661 (Dashboard "K8s Cluster Summary") > Load
 
-- Data Source > chọn Prometheus.
+- Chọn Data Source: Prometheus
 
 Bạn sẽ thấy một bảng điều khiển hiện ra với đủ các chỉ số CPU, RAM, và số lượng Pod đang chạy trên máy!
+
+### 8. Troubleshooting
+
+**PVC pending sau khi chạy script:**
+
+Kiểm tra storage class và resources:
+
+```bash
+kubectl get pvc -n monitoring
+kubectl describe pvc grafana -n monitoring
+kubectl get nodes -o wide
+kubectl describe node <node-name>
+```
+
+**Helm upgrade thất bại vì PVC resize:**
+
+Nếu gặp lỗi "cannot patch PersistentVolumeClaim", hãy chắc chắn storage class hỗ trợ resize hoặc giữ nguyên kích thước PVC hiện có (values file đã được cập nhật để tránh ép resize).
+
+**Grafana/Prometheus không khởi động:**
+
+Kiểm tra logs:
+
+```bash
+kubectl logs -n monitoring -l app.kubernetes.io/name=grafana
+kubectl logs -n monitoring -l release=prometheus
+```
+
+**Tailscale Ingress không hoạt động:**
+
+Xác minh Tailscale Operator đã ready:
+
+```bash
+kubectl get pods -n tailscale
+kubectl describe ingress -n monitoring
+```

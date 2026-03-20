@@ -37,7 +37,7 @@ spec:
               service:
                 name: gateway
                 port:
-                  number: 9999
+                  number: 8080
   tls:
     - hosts:
         - faasportal
