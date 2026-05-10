@@ -1,0 +1,14 @@
+- Dùng tuyến tính từng khúc (ví dụ 5%)
+- Mục tiêu: Map data về [0, 1]
+- Vấn đề của Linear (Min-max) nó sẽ biến dữ liệu thành 1 đuongừ
+- Giải pháp: 
+- Chẳng hạn: 0-5% -> [0, 0.05)
+Top 5 % - 10 % -> [0.05, 0.1)
+....
+95% - 100% -> [0.95, 1.0)
+
+Bắt đầu từ 20 khoảng, có thể tăng giảm cho phù hợp
+
+Mapping thành vector
+
+Task tuần này: Chuyển thành lớp embedding -> Bỏ vào model chạy
