@@ -1,6 +1,7 @@
 Mendeley_Dataset/.ipynb_checkpoints
-Mendeley_Dataset/medeley_dataset.csv
-Mendeley_Dataset/Ref_Paper
+Mendeley_Dataset/dataset.csv
+Mendeley_Dataset/dow_dataset.csv
+Mendeley_Dataset/raw_dataset.csv
 venv
 Zendodo_Dataset/menor%bots_1
 Zendodo_Dataset/menor%bots_2
@@ -8,3 +9,6 @@ Zendodo_Dataset/menor_bots_1.zip
 Zendodo_Dataset/menor_bots_2.zip
 Zendodo_Dataset/DataSet.zip
 Zendodo_Dataset/.ipynb_checkpoints
+Zendodo_Dataset/dow_dataset.csv
+Zendodo_Dataset/dow_processed_dataset.csv
+Zendodo_Dataset/dow_raw_dataset.csv

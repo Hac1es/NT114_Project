@@ -2,10 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Comprehensive EDA → JSON Export
-- Numeric stats + skew + kurtosis + imbalance
-- Quantiles: 5% → 95%
-- Categorical summary
+Network-Domain EDA -> JSON Export
+Groups features into discrete and continuous data.
 """
 
 import json
@@ -14,93 +12,131 @@ import numpy as np
 import pandas as pd
 
 
-def comprehensive_eda_to_json(df):
-    result = {}
+def build_quantiles(series):
+    quantiles = list(np.arange(0.05, 1.00, 0.05)) + [0.99]
+    q_vals = series.quantile(quantiles).to_dict()
+    return {f"q{int(q * 100):02d}": float(v) for q, v in q_vals.items()}
+
+
+def build_quantile_profile(quantiles):
+    values = list(quantiles.values())
+    rounded_values = [round(v, 10) for v in values]
+    unique_quantile_count = len(set(rounded_values))
+    total_quantiles = len(values)
+    quantile_unique_ratio = unique_quantile_count / total_quantiles
+    repeated_quantile_ratio = 1 - quantile_unique_ratio
+    fractional_quantile_count = sum(
+        not np.isclose(v, round(v), rtol=0, atol=1e-9) for v in values
+    )
+
+    return {
+        "quantile_count": total_quantiles,
+        "unique_quantile_count": unique_quantile_count,
+        "quantile_unique_ratio": float(quantile_unique_ratio),
+        "repeated_quantile_ratio": float(repeated_quantile_ratio),
+        "fractional_quantile_count": int(fractional_quantile_count),
+        "fractional_quantile_ratio": float(fractional_quantile_count / total_quantiles),
+    }
+
+
+def classify_numeric_by_quantiles(quantile_profile, unique_count):
+    dense_quantiles = quantile_profile["quantile_unique_ratio"] >= 0.85
+    has_fractional_quantiles = quantile_profile["fractional_quantile_ratio"] > 0.15
+    high_cardinality = unique_count > 100
+
+    return has_fractional_quantiles or (dense_quantiles and high_cardinality)
+
+
+def network_domain_eda(df):
+    result = {
+        "assessment": {
+            "discrete_data": [],
+            "continuous_data": [],
+        },
+        "discrete_data": {},
+        "continuous_data": {},
+    }
 
     num_cols = df.select_dtypes(include=['number']).columns
     cat_cols = df.select_dtypes(include=['object', 'category', 'str']).columns
 
     # ===================== NUMERIC =====================
     if len(num_cols) > 0:
-        desc = df[num_cols].describe().T
+        for col in num_cols:
+            col_series = df[col].dropna()
+            if len(col_series) == 0:
+                continue
 
-        desc['skew'] = df[num_cols].skew()
-        desc['kurtosis'] = df[num_cols].kurt()
-        desc['top_freq_pct'] = df[num_cols].apply(
-            lambda x: x.value_counts(normalize=True).iloc[0] * 100
-        )
-        desc['unique'] = df[num_cols].nunique()
+            unique_count = int(col_series.nunique())
+            quantiles = build_quantiles(col_series)
+            quantile_profile = build_quantile_profile(quantiles)
+            is_continuous = classify_numeric_by_quantiles(quantile_profile, unique_count)
+            is_discrete = not is_continuous
 
-        # ===== QUANTILES (5% step) =====
-        quantiles = np.arange(0.05, 1.00, 0.05)
-        q_df = df[num_cols].quantile(quantiles)
-        q_dict = q_df.to_dict()
-
-        numeric_dict = desc.to_dict(orient='index')
-
-        for col, stats in numeric_dict.items():
-            clean_stats = {
-                k: (None if pd.isna(v) else float(v))
-                for k, v in stats.items()
+            stats = {
+                "count": int(len(col_series)),
+                "missing_count": int(df[col].isna().sum()),
+                "data_type": str(df[col].dtype),
+                "mean": float(col_series.mean()),
+                "std": float(col_series.std()),
+                "min": float(col_series.min()),
+                "max": float(col_series.max()),
+                "unique_count": unique_count,
+                "top_frequency_percent": float(col_series.value_counts(normalize=True).iloc[0] * 100),
+                "quantiles": quantiles,
+                "quantile_profile": quantile_profile,
             }
 
-            # Add quantiles
-            if col in q_dict:
-                clean_stats["quantiles"] = {
-                    f"q{int(q*100):02d}": (
-                        None if pd.isna(v) else float(v)
-                    )
-                    for q, v in q_dict[col].items()
-                }
-
-            result[col] = clean_stats
+            if is_discrete:
+                result["assessment"]["discrete_data"].append(col)
+                result["discrete_data"][col] = stats
+            else:
+                result["assessment"]["continuous_data"].append(col)
+                result["continuous_data"][col] = stats
 
     # ===================== CATEGORICAL =====================
     if len(cat_cols) > 0:
         for col in cat_cols:
-            vc = df[col].value_counts(dropna=False)
-
-            result[col] = {
-                "type": "categorical",
-                "count": int(df[col].count()),
-                "unique": int(df[col].nunique()),
-                "top": vc.index[0] if len(vc) > 0 else None,
-                "top_freq": int(vc.iloc[0]) if len(vc) > 0 else None,
-                "top_freq_pct": (
-                    float(vc.iloc[0] / len(df) * 100) if len(vc) > 0 else None
-                )
+            col_series = df[col].dropna()
+            vc = col_series.value_counts(dropna=False)
+            
+            cat_stats = {
+                "count": int(col_series.count()),
+                "missing_count": int(df[col].isna().sum()),
+                "data_type": str(df[col].dtype),
+                "unique_count": int(col_series.nunique()),
+                "top": str(vc.index[0]) if len(vc) > 0 else None,
+                "top_frequency_percent": float(vc.iloc[0] / len(col_series) * 100) if len(vc) > 0 and len(col_series) > 0 else None,
             }
+
+            result["assessment"]["discrete_data"].append(col)
+            result["discrete_data"][col] = cat_stats
 
     return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description="EDA → JSON exporter")
+    parser = argparse.ArgumentParser(description="EDA JSON Exporter")
     parser.add_argument("input", help="Input CSV file")
     parser.add_argument(
-        "-o", "--output", default="eda_output.json", help="Output JSON file"
+        "-o", "--output", default="eda_report.json", help="Output JSON file"
     )
-
     args = parser.parse_args()
 
-    # Load data
     try:
         df = pd.read_csv(args.input)
     except Exception as e:
         print(f"[ERROR] Cannot read file: {e}")
         return
 
-    # Run EDA
-    result = comprehensive_eda_to_json(df)
+    result = network_domain_eda(df)
 
-    # Export JSON
     try:
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=4, ensure_ascii=False)
-        print(f"[OK] EDA saved to: {args.output}")
+        print(f"[OK] EDA report saved to: {args.output}")
     except Exception as e:
         print(f"[ERROR] Cannot write JSON: {e}")
-
 
 if __name__ == "__main__":
     main()

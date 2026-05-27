@@ -1,0 +1,12 @@
+Nhân với 20000
+Mapping thành khoảng 64 chiều
+Cell => V = V(value) || V(feature)
+
+- RTT, InvocationDelay: 20000 / (Max + 0.1) = Hệ số để nhân rời rạc hóa
+Data = Hệ số * RTT sau khi Scale -> Làm tròn
+
+- Scale, xử lý xong -> in ra tập mới và đánh giá lại
+
+- Embedding, nhúng đơn điệu, tọa độ đầu tiên, mấy tọa đồ sau dùng random
+
+- Monolithic Embedding
