@@ -1,7 +1,0 @@
-server:
-  persistentVolume:
-    enabled: true
-    accessModes:
-      - ReadWriteOnce
-
-  retention: 15d
