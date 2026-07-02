@@ -98,7 +98,7 @@ def main():
     parser.add_argument(
         "input",
         nargs="?",
-        default="dow_raw_dataset.csv",
+        default="raw_dataset.csv",
         help="Input raw CSV file",
     )
     parser.add_argument(

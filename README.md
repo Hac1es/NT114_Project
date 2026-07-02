@@ -6,6 +6,30 @@ This project focuses on detecting attacks in a serverless environment. Currently
 - [Generation of a dataset for DoW attack detection in serverless architectures](https://www.researchgate.net/publication/376254601_Generation_of_a_dataset_for_DoW_attack_detection_in_serverless_architectures)
 - [Data augmentation with Generative AI for DoW attack detection in serverless architectures](https://zenodo.org/records/13758901)
 
+## Proposed Architecture
+
+![Architecture](Proposed_Architecture.png)
+
+The proposed architecture separates the system into three independent pipelines: request processing, telemetry collection, and AI-based detection, minimizing the impact on application latency.
+
+- Kong API Gateway receives client requests, collects request metadata, and routes traffic to OpenFaaS functions.
+- OpenFaaS on Kubernetes executes serverless functions and manages auto-scaling.
+- Prometheus, Grafana Alloy, and Loki collect runtime metrics and logs.
+- Apache Kafka decouples telemetry collection from the request path for asynchronous processing.
+- The Feature Builder combines request events and runtime telemetry into feature vectors.
+- The AI Detection Service analyzes these features to detect potential Denial of Wallet (DoW) attacks.
+- The Alert & Policy Engine generates alerts and can trigger mitigation actions such as rate limiting.
+- Grafana provides dashboards for monitoring logs, metrics, and detection results.
+
+### Detection Workflow
+
+1. A client request is processed by Kong and forwarded to OpenFaaS.
+2. Request metadata and runtime telemetry are collected asynchronously through Kafka.
+3. The Feature Builder generates feature vectors.
+4. The AI Detection Service performs inference and produces a risk score.
+5. The Alert & Policy Engine logs, alerts, or applies mitigation policies.
+6. Administrators monitor the system using Grafana dashboards.
+
 ## Current Results
 
 ### 1. Classification Performance
