@@ -14,8 +14,8 @@ Both models achieved an outstanding overall **Accuracy of 99%**. Detailed metric
 
 | Model | Class | Precision | Recall | F1-Score | Inference Time (s) |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **XGBoost** | 0.0 (Human)<br>1.0 (Bot) | 1.00<br>0.96 | 0.99<br>0.99 | 0.99<br>0.97 | **2.3078s** |
-| **Transformer** | 0.0 (Human)<br>1.0 (Bot) | 0.99<br>0.98 | 0.99<br>0.98 | 0.99<br>0.98 | **16.6050s** |
+| **XGBoost** | 0.0 (Human)<br>1.0 (Bot) | 1.00<br>0.96 | 0.99<br>0.99 | 0.99<br>0.97 | **0.8242 ms** |
+| **Transformer** | 0.0 (Human)<br>1.0 (Bot) | 0.99<br>0.98 | 0.99<br>0.98 | 0.99<br>0.98 | **5,93 ms** |
 
 ---
 
@@ -35,4 +35,4 @@ The distribution of true positives, true negatives, and misclassifications highl
 
 ### 3. Key Takeaways & Operational Efficiency
 
-> 🚀 **Inference Speed Breakthrough:** While the Transformer model provides slightly better precision on the Bot class (0.98 vs 0.96), **XGBoost processed the entire test suite ~7.2x faster** than the Transformer architecture (2.31s vs 16.61s).
+> 🚀 **Inference Speed Breakthrough:** While the Transformer model provides slightly better precision on the Bot class (0.98 vs 0.96), **XGBoost processed the entire test suite ~7.2x faster** than the Transformer architecture.
